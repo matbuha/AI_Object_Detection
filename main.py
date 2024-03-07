@@ -1,45 +1,54 @@
-import cv2  # Import the OpenCV library for computer vision tasks.
-import time  # Import the time library for time-related tasks.
+import numpy as np
+import cv2
 
-video = cv2.VideoCapture(0)  # Start video capture from the default camera (usually the webcam).
+image_path = 'street_with_vehicles.jpg'
+prototxt_path = 'models/MobileNetSSD_deploy.prototxt'
+model_path = 'models/MobileNetSSD_deploy.caffemodel'
+min_confidence = 0.6
 
-first_frame = None  # Initialize the variable to store the first frame for background subtraction.
-frame_update_time = 10  # Time in seconds after which the first frame will be updated
-first_frame_set_time = None  # Capture the current time when the first frame is set
+classes = ["background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat",
+           "chair", "cow", "diningtable", "dog", "horse", "motorbike", "person", "pottedplant",
+           "sheep", "sofa", "train", "tvmonitor",]
 
-while True:  # Start an infinite loop to continuously capture frames.
-    check, frame = video.read()  # Read a frame from the video capture object.
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)  # Convert the frame to grayscale to reduce complexity.
-    gray = cv2.GaussianBlur(gray, (21, 21), 0)  # Apply Gaussian blur to smooth the frame, reducing noise and detail.
+np.random.seed(543210)
+colors = np.random.uniform(0, 255, size=(len(classes), 3))
 
-    if first_frame is None:  # Check if the first frame has not been captured yet.
-        first_frame = gray  # Set the current frame as the first frame.
-        first_frame_set_time = time.time()  # Update the time when the first frame is set
-        continue  # Skip the rest of the loop to update the first_frame with the first captured frame.
+net = cv2.dnn.readNetFromCaffe(prototxt_path, model_path)
 
-    time_elapsed = time.time() - first_frame_set_time  # Calculate the time elapsed since the first frame was set
+cap = cv2.VideoCapture(1)
 
-    # If the time elapsed exceeds the frame update time, reset the first frame
-    if time_elapsed > frame_update_time:
-        first_frame = gray
-        first_frame_set_time = time.time()  # Reset the timer for the first frame update
+while True:
+    _, image = cap.read()
 
-    delta_frame = cv2.absdiff(first_frame, gray)  # Calculate the absolute difference between the first frame and the current frame.
-    threshold_frame = cv2.threshold(delta_frame, 50, 255, cv2.THRESH_BINARY)[1]  # Apply thresholding to highlight significant differences.
-    threshold_frame = cv2.dilate(threshold_frame, None, iterations=1)  # Dilate the thresholded frame to fill in gaps.
+    height, width = image.shape[0], image.shape[1]
+    blob = cv2.dnn.blobFromImage(cv2.resize(image, (300, 300)), 0.007, (300, 300), 130)
 
-    (cntr, _) = cv2.findContours(threshold_frame.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)  # Find contours in the thresholded frame.
+    net.setInput(blob)
+    detected_objects = net.forward()
 
-    for contour in cntr:  # Loop through each contour found.
-        if cv2.contourArea(contour) < 1000:  # If the contour area is less than 1000, ignore it.
-            continue
-        (x, y, w, h) = cv2.boundingRect(contour)  # Get the bounding box for the contour.
-        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Draw a green rectangle around the detected motion.
+    for i in range(detected_objects.shape[2]):
 
-    cv2.imshow("AI_Detector", frame)  # Display the frame with detected motion in a window.
-    key = cv2.waitKey(1)  # Wait for 1 millisecond and check if a key is pressed.
+        confidence = detected_objects[0][0][i][2]
+
+        if confidence > min_confidence:
+            class_index = int(detected_objects[0, 0, i, 1])
+
+            upper_left_x = int(detected_objects[0, 0, i, 3] * width)
+            upper_left_y = int(detected_objects[0, 0, i, 4] * height)
+            lower_right_x = int(detected_objects[0, 0, i, 5] * width)
+            lower_right_y = int(detected_objects[0, 0, i, 6] * height)
+
+            prediction_text = f"{classes[class_index]}: {confidence:.2f}%"
+            cv2.rectangle(image, (upper_left_x, upper_left_y), (lower_right_x, lower_right_y), colors[class_index], 2)
+            cv2.putText(image, prediction_text, (upper_left_x,
+                        upper_left_y - 15 if upper_left_y > 30 else upper_left_y + 15),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, colors[class_index], 2)
+
+    cv2.imshow("Detected Objects", image)  # Display the image with detected motion in a window.
+    key = cv2.waitKey(5)  # Wait for 5 millisecond and check if a key is pressed.
     if key == ord('q'):  # If the 'q' key is pressed, break the loop.
         break
 
-video.release()  # Release the video capture object.
+cv2.release()  # Release the video capture object.
 cv2.destroyAllWindows()  # Close all OpenCV windows.
+
