@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 
+
 # Global configurations
 CONFIG = {
     'image_path': 'street_with_vehicles.jpg',
